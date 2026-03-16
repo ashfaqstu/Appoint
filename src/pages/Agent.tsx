@@ -68,6 +68,8 @@ export default function Agent() {
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
   const [isCaptionsEnabled, setIsCaptionsEnabled] = useState(true);
   const [showHoverWindow, setShowHoverWindow] = useState(false);
+  const [infoRequest, setInfoRequest] = useState<{ id: string; question: string; inputType: string } | null>(null);
+  const [infoInputValue, setInfoInputValue] = useState('');
 
   const sessionRef = useRef<any>(null);
   const turnCompleteRef = useRef<boolean>(true);
@@ -240,9 +242,22 @@ WORKFLOW:
 - If the user enables their camera, you can see them and analyze any physical symptoms they show you (like rashes, injuries, etc.).
 - If they need a doctor, verbally suggest the type of specialist needed, then call the 'showRecommendations' tool with the specialty to recommend clinics and doctors with trade-offs.
 - If the user agrees to book a specific doctor, say "I'll book that for you right now" and call the 'triggerAutomatedBooking' tool.
+- If you need specific information that is easier to type (like an address, a specific date, or a complex name), call the 'requestInformation' tool to show an input popup on their screen.
 - If it's an emergency (like chest pain or stroke), immediately trigger an emergency alert by calling 'triggerEmergencyAlert' and recommend the nearest emergency hospital.`,
           tools: [{
             functionDeclarations: [
+              {
+                name: 'requestInformation',
+                description: 'Request specific information from the user (e.g., date of birth, specific symptom details) and show an input popup on their screen.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    question: { type: Type.STRING, description: 'The question to ask the user.' },
+                    inputType: { type: Type.STRING, description: 'The type of input expected (e.g., text, date, number).' }
+                  },
+                  required: ['question', 'inputType']
+                }
+              },
               {
                 name: 'showRecommendations',
                 description: 'Show a list of recommended doctors and clinics to the user based on their symptoms, including trade-offs like distance and availability.',
@@ -388,6 +403,9 @@ WORKFLOW:
                     }]
                   });
                 });
+              } else if (call.name === 'requestInformation') {
+                const args = call.args as any;
+                setInfoRequest({ id: call.id, question: args.question, inputType: args.inputType });
               } else if (call.name === 'showRecommendations') {
                 const args = call.args as any;
                 
@@ -650,6 +668,82 @@ WORKFLOW:
                     }, 2000);
                   }}
                 />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Information Request Modal */}
+        <AnimatePresence>
+          {infoRequest && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-slate-900/90 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-2xl z-40"
+            >
+              <h3 className="text-xl font-semibold text-white mb-4">{infoRequest.question}</h3>
+              <input
+                type={infoRequest.inputType === 'date' ? 'date' : infoRequest.inputType === 'number' ? 'number' : 'text'}
+                value={infoInputValue}
+                onChange={(e) => setInfoInputValue(e.target.value)}
+                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 mb-6"
+                placeholder="Type your answer here..."
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    if (sessionRef.current) {
+                      sessionRef.current.sendToolResponse({
+                        functionResponses: [{
+                          id: infoRequest.id,
+                          name: 'requestInformation',
+                          response: { result: infoInputValue }
+                        }]
+                      });
+                    }
+                    setInfoRequest(null);
+                    setInfoInputValue('');
+                  }
+                }}
+              />
+              <div className="flex justify-end gap-3">
+                <Button 
+                  variant="outline" 
+                  className="border-slate-700 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  onClick={() => {
+                    if (sessionRef.current) {
+                      sessionRef.current.sendToolResponse({
+                        functionResponses: [{
+                          id: infoRequest.id,
+                          name: 'requestInformation',
+                          response: { result: 'User cancelled input.' }
+                        }]
+                      });
+                    }
+                    setInfoRequest(null);
+                    setInfoInputValue('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  className="bg-teal-600 hover:bg-teal-700 text-white border-0"
+                  onClick={() => {
+                    if (sessionRef.current) {
+                      sessionRef.current.sendToolResponse({
+                        functionResponses: [{
+                          id: infoRequest.id,
+                          name: 'requestInformation',
+                          response: { result: infoInputValue }
+                        }]
+                      });
+                    }
+                    setInfoRequest(null);
+                    setInfoInputValue('');
+                  }}
+                >
+                  Confirm
+                </Button>
               </div>
             </motion.div>
           )}

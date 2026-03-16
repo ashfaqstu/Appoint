@@ -12,6 +12,7 @@ import Dashboard from './pages/Dashboard';
 import Agent from './pages/Agent';
 import Booking from './pages/Booking';
 import History from './pages/History';
+import Profile from './pages/Profile';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useAuth();
@@ -33,6 +34,7 @@ function AnimatedRoutes() {
         <Route path="/agent" element={<PrivateRoute><Agent /></PrivateRoute>} />
         <Route path="/booking" element={<PrivateRoute><Booking /></PrivateRoute>} />
         <Route path="/history" element={<PrivateRoute><History /></PrivateRoute>} />
+        <Route path="/profile" element={<PrivateRoute><Profile /></PrivateRoute>} />
         <Route path="/" element={<Navigate to="/dashboard" />} />
       </Routes>
     </AnimatePresence>
