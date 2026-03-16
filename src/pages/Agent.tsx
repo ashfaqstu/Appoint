@@ -148,6 +148,7 @@ export default function Agent() {
   const connect = async () => {
     setIsConnecting(true);
     try {
+      console.log("API Key available:", !!process.env.GEMINI_API_KEY);
       const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       const stream = await navigator.mediaDevices.getUserMedia({
