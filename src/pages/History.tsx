@@ -14,6 +14,7 @@ export default function History() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    window.scrollTo(0, 0);
     const fetchData = async () => {
       try {
         const [logsData, threadsData, aptData] = await Promise.all([

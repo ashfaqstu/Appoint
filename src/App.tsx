@@ -26,7 +26,7 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function AnimatedRoutes() {
   const location = useLocation();
   return (
-    <AnimatePresence>
+    <AnimatePresence mode="wait">
       {/* @ts-ignore */}
       <Routes location={location} key={location.pathname}>
         <Route path="/login" element={<Login />} />

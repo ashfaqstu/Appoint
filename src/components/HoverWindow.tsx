@@ -16,6 +16,8 @@ export function HoverWindow({ doctors, liveTranscript, onClose, onSelect, langua
 
   // The "Glowing Sync" Magic (Transcript Matching)
   useEffect(() => {
+    if (!liveTranscript) return; // Don't clear if transcript is empty
+
     const lowerTranscript = liveTranscript.toLowerCase();
     
     // Find if any doctor's name is in the transcript
@@ -44,14 +46,14 @@ export function HoverWindow({ doctors, liveTranscript, onClose, onSelect, langua
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm"
+      className="absolute inset-0 z-40 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto"
       onClick={onClose}
     >
       <motion.div
         initial={{ scale: 0.9, y: 20 }}
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, y: 20 }}
-        className="w-full max-w-4xl"
+        className="w-full max-w-4xl my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="text-center mb-8">
@@ -63,7 +65,7 @@ export function HoverWindow({ doctors, liveTranscript, onClose, onSelect, langua
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 max-h-[70vh] overflow-y-auto p-2">
           {displayDoctors.map((doctor) => {
             const isActive = activeDoctorId === doctor.id;
             

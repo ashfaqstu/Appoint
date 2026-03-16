@@ -6,7 +6,7 @@ import { Button } from '../components/ui/Button';
 import { PhoneOff, AlertTriangle, Stethoscope, X, ChevronRight, Volume2, Video, VideoOff, MessageSquareText, MessageSquareOff, Mic } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GoogleGenAI, LiveServerMessage, Modality, Type } from '@google/genai';
-import { SimulatedBrowserStream } from '../components/SimulatedBrowserStream';
+import { AppointmentInfoWindow, AppointmentDetails } from '../components/AppointmentInfoWindow';
 import { HoverWindow } from '../components/HoverWindow';
 
 // Helper functions for PCM audio processing
@@ -38,7 +38,7 @@ function base64ToFloat32(base64: string): Float32Array {
   return float32Array;
 }
 
-type ToastType = 'recommendation' | 'emergency';
+type ToastType = 'recommendation' | 'emergency' | 'info';
 
 interface ToastData {
   id: string;
@@ -49,7 +49,7 @@ interface ToastData {
 }
 
 export default function Agent() {
-  const { user } = useAuth();
+  const { user, updateProfile } = useAuth();
   const navigate = useNavigate();
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -62,7 +62,7 @@ export default function Agent() {
   const [isBookingAutomated, setIsBookingAutomated] = useState(false);
   const [bookingStep, setBookingStep] = useState(0);
   const [bookingStatus, setBookingStatus] = useState('');
-  const [bookingArgs, setBookingArgs] = useState<{ doctorName: string; hospital: string } | null>(null);
+  const [appointmentDetails, setAppointmentDetails] = useState<AppointmentDetails | null>(null);
   const [aiSubtitle, setAiSubtitle] = useState('');
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
   const [isCameraEnabled, setIsCameraEnabled] = useState(false);
@@ -107,10 +107,12 @@ export default function Agent() {
           if (ctx) {
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const base64Data = canvas.toDataURL('image/jpeg', 0.5).split(',')[1];
-            sessionRef.current.sendRealtimeInput([{
-              mimeType: 'image/jpeg',
-              data: base64Data
-            }]);
+            sessionRef.current.sendRealtimeInput({
+              media: {
+                mimeType: 'image/jpeg',
+                data: base64Data
+              }
+            });
           }
         }
       }, 1000); // 1 frame per second
@@ -228,6 +230,14 @@ export default function Agent() {
           outputAudioTranscription: {},
           systemInstruction: `You are Appoint, a helpful, trustworthy, and empathetic healthcare assistant. The user's language preference is ${user?.language === 'bn' ? 'Bangla' : 'English'}.
 
+USER PROFILE DATA:
+- Age: ${user?.profile?.age || 'Unknown'}
+- Gender: ${user?.profile?.gender || 'Unknown'}
+- Blood Type: ${user?.profile?.bloodType || 'Unknown'}
+- Allergies: ${user?.profile?.allergies || 'Unknown'}
+- Chronic Conditions: ${user?.profile?.chronicConditions || 'Unknown'}
+- Emergency Contact: ${user?.profile?.emergencyContact || 'Unknown'}
+
 CORE BEHAVIORAL GUIDELINES:
 1. Empathetic but Objective: Validate the user's discomfort (e.g., "I'm sorry to hear your back is hurting, that sounds very uncomfortable"), but maintain a calm, professional tone.
 2. One Question at a Time: Tech-challenged users get overwhelmed easily. NEVER ask compound questions. Ask one simple question, wait for the answer, and then ask the next.
@@ -241,11 +251,26 @@ WORKFLOW:
 - If the description is vague, ask 1 or 2 simple follow-up questions (one at a time) to understand the condition better.
 - If the user enables their camera, you can see them and analyze any physical symptoms they show you (like rashes, injuries, etc.).
 - If they need a doctor, verbally suggest the type of specialist needed, then call the 'showRecommendations' tool with the specialty to recommend clinics and doctors with trade-offs.
-- If the user agrees to book a specific doctor, say "I'll book that for you right now" and call the 'triggerAutomatedBooking' tool.
+- If the user agrees to book a specific doctor, say "I'll open the appointment details window for you" and call the 'triggerAutomatedBooking' tool.
+- Once the appointment window is open, automatically fill in the details using the 'updateAppointmentDetails' tool. Ask the user for any missing information (like preferred date/time or symptoms).
+- When the user confirms the details look good, call the 'confirmAppointment' tool to finalize the booking.
 - If you need specific information that is easier to type (like an address, a specific date, or a complex name), call the 'requestInformation' tool to show an input popup on their screen.
+- If you notice missing information in the user's profile (like age, blood type, allergies) that is needed for booking an appointment, ask the user for it. Once they provide it, use the 'updatePatientProfile' tool to save it.
 - If it's an emergency (like chest pain or stroke), immediately trigger an emergency alert by calling 'triggerEmergencyAlert' and recommend the nearest emergency hospital.`,
           tools: [{
             functionDeclarations: [
+              {
+                name: 'updatePatientProfile',
+                description: 'Update the user\'s profile with missing information (e.g., age, blood type, allergies, chronic conditions) before or during booking.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    field: { type: Type.STRING, description: 'The field to update (e.g., age, bloodType, allergies, emergencyContact).' },
+                    value: { type: Type.STRING, description: 'The new value for the field.' }
+                  },
+                  required: ['field', 'value']
+                }
+              },
               {
                 name: 'requestInformation',
                 description: 'Request specific information from the user (e.g., date of birth, specific symptom details) and show an input popup on their screen.',
@@ -283,7 +308,7 @@ WORKFLOW:
               },
               {
                 name: 'triggerAutomatedBooking',
-                description: 'Trigger an automated booking process when the user agrees to book an appointment with a doctor.',
+                description: 'Open the appointment information window when the user agrees to book an appointment with a doctor.',
                 parameters: {
                   type: Type.OBJECT,
                   properties: {
@@ -291,6 +316,26 @@ WORKFLOW:
                     hospital: { type: Type.STRING, description: 'The hospital name.' }
                   },
                   required: ['doctorName', 'hospital']
+                }
+              },
+              {
+                name: 'updateAppointmentDetails',
+                description: 'Update the fields in the appointment information window. Use this to auto-fill data or update based on user answers.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING, description: 'The appointment date (YYYY-MM-DD).' },
+                    time: { type: Type.STRING, description: 'The appointment time (HH:MM).' },
+                    symptoms: { type: Type.STRING, description: 'Symptoms or reason for visit.' }
+                  }
+                }
+              },
+              {
+                name: 'confirmAppointment',
+                description: 'Confirm and finalize the appointment booking after the user has reviewed the details.',
+                parameters: {
+                  type: Type.OBJECT,
+                  properties: {}
                 }
               }
             ]
@@ -391,7 +436,17 @@ WORKFLOW:
               const call = message.toolCall.functionCalls[0];
               if (call.name === 'triggerAutomatedBooking') {
                 const args = call.args as any;
-                setBookingArgs({ doctorName: args.doctorName, hospital: args.hospital });
+                setAppointmentDetails({ 
+                  doctorName: args.doctorName || '', 
+                  hospital: args.hospital || '',
+                  patientName: user?.name || '',
+                  age: user?.profile?.age || '',
+                  gender: user?.profile?.gender || '',
+                  bloodType: user?.profile?.bloodType || '',
+                  symptoms: '',
+                  date: '',
+                  time: ''
+                });
                 setIsBookingAutomated(true);
 
                 sessionPromise.then(session => {
@@ -399,7 +454,50 @@ WORKFLOW:
                     functionResponses: [{
                       id: call.id,
                       name: call.name,
-                      response: { result: 'Booking automation started successfully.' }
+                      response: { result: 'Appointment window opened. Please ask the user for preferred date, time, and symptoms, then use updateAppointmentDetails to fill them.' }
+                    }]
+                  });
+                });
+              } else if (call.name === 'updateAppointmentDetails') {
+                const args = call.args as any;
+                setAppointmentDetails(prev => {
+                  if (!prev) return prev;
+                  return {
+                    ...prev,
+                    ...(args.date && { date: args.date }),
+                    ...(args.time && { time: args.time }),
+                    ...(args.symptoms && { symptoms: args.symptoms })
+                  };
+                });
+                
+                sessionPromise.then(session => {
+                  session.sendToolResponse({
+                    functionResponses: [{
+                      id: call.id,
+                      name: call.name,
+                      response: { result: 'Appointment details updated in the UI.' }
+                    }]
+                  });
+                });
+              } else if (call.name === 'confirmAppointment') {
+                setToasts(prev => [...prev, {
+                  id: call.id,
+                  type: 'recommendation',
+                  title: user?.language === 'bn' ? 'অ্যাপয়েন্টমেন্ট নিশ্চিত হয়েছে' : 'Appointment Confirmed',
+                  message: `Your appointment is confirmed.`
+                }]);
+                
+                setTimeout(() => {
+                  setIsBookingAutomated(false);
+                  setAppointmentDetails(null);
+                }, 2000);
+
+                sessionPromise.then(session => {
+                  session.sendToolResponse({
+                    functionResponses: [{
+                      id: call.id,
+                      name: call.name,
+                      response: { result: 'Appointment confirmed and window closed.' }
                     }]
                   });
                 });
@@ -424,6 +522,29 @@ WORKFLOW:
                       id: call.id,
                       name: call.name,
                       response: { result: 'Hover window with recommendations displayed to user.' }
+                    }]
+                  });
+                });
+              } else if (call.name === 'updatePatientProfile') {
+                const args = call.args as any;
+                console.log(`Updating profile: ${args.field} = ${args.value}`);
+                
+                // Call the context function to update the profile
+                updateProfile({ [args.field]: args.value }).catch(console.error);
+
+                setToasts(prev => [...prev, {
+                  id: call.id,
+                  type: 'info',
+                  title: user?.language === 'bn' ? 'প্রোফাইল আপডেট হয়েছে' : 'Profile Updated',
+                  message: `Saved your ${args.field} as ${args.value}.`
+                }]);
+                
+                sessionPromise.then(session => {
+                  session.sendToolResponse({
+                    functionResponses: [{
+                      id: call.id,
+                      name: call.name,
+                      response: { status: 'profile_updated', field: args.field, value: args.value }
                     }]
                   });
                 });
@@ -521,11 +642,11 @@ WORKFLOW:
         className="absolute inset-0 z-0"
         animate={{
           background: isAiSpeaking 
-            ? 'radial-gradient(circle at 50% 50%, rgba(13, 148, 136, 0.4) 0%, rgba(15, 23, 42, 1) 70%)' 
+            ? 'radial-gradient(circle at 50% 50%, rgba(16, 185, 129, 0.4) 0%, rgba(15, 23, 42, 1) 70%)' 
             : userVolume > 0.05 
-              ? 'radial-gradient(circle at 50% 50%, rgba(79, 70, 229, 0.4) 0%, rgba(15, 23, 42, 1) 70%)'
+              ? 'radial-gradient(circle at 50% 50%, rgba(20, 184, 166, 0.4) 0%, rgba(15, 23, 42, 1) 70%)'
               : isConnected
-                ? 'radial-gradient(circle at 50% 50%, rgba(3, 105, 161, 0.3) 0%, rgba(15, 23, 42, 1) 70%)'
+                ? 'radial-gradient(circle at 50% 50%, rgba(6, 95, 70, 0.3) 0%, rgba(15, 23, 42, 1) 70%)'
                 : 'radial-gradient(circle at 50% 50%, rgba(15, 23, 42, 1) 0%, rgba(2, 6, 23, 1) 100%)'
         }}
         transition={{ duration: 1 }}
@@ -590,14 +711,14 @@ WORKFLOW:
             onClick={connect}
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            className="w-48 h-48 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 flex items-center justify-center shadow-[0_0_40px_rgba(59,130,246,0.6)] relative group cursor-pointer border-4 border-white/20 z-10"
+            className="w-48 h-48 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 flex items-center justify-center shadow-[0_0_40px_rgba(16,185,129,0.6)] relative group cursor-pointer border-4 border-white/20 z-10"
           >
             <motion.div layoutId="ai-orb-icon">
               <Mic className="w-12 h-12 text-white" />
             </motion.div>
           </motion.button>
         ) : isConnecting ? (
-          <motion.div layoutId="ai-orb-core" className="flex flex-col items-center justify-center w-48 h-48 rounded-full bg-gradient-to-br from-blue-400 to-indigo-600 shadow-[0_0_40px_rgba(59,130,246,0.6)] border-4 border-white/20 z-10">
+          <motion.div layoutId="ai-orb-core" className="flex flex-col items-center justify-center w-48 h-48 rounded-full bg-gradient-to-br from-emerald-400 to-teal-600 shadow-[0_0_40px_rgba(16,185,129,0.6)] border-4 border-white/20 z-10">
             <div className="w-16 h-16 rounded-full border-4 border-white/20 border-t-white animate-spin" />
           </motion.div>
         ) : (
@@ -618,7 +739,7 @@ WORKFLOW:
               <motion.div 
                 layoutId="ai-orb-glow-1"
                 className={`absolute w-64 h-64 rounded-full blur-3xl transition-colors duration-500 ${
-                  isAiSpeaking ? 'bg-teal-500/40' : userVolume > 0.05 ? 'bg-indigo-500/40' : 'bg-blue-500/20'
+                  isAiSpeaking ? 'bg-emerald-500/40' : userVolume > 0.05 ? 'bg-teal-500/40' : 'bg-emerald-500/20'
                 }`} 
               />
               
@@ -626,14 +747,14 @@ WORKFLOW:
               <motion.div 
                 layoutId="ai-orb-glow-2"
                 className={`absolute w-48 h-48 rounded-full backdrop-blur-md border border-white/10 flex items-center justify-center transition-colors duration-500 ${
-                  isAiSpeaking ? 'bg-teal-400/20' : userVolume > 0.05 ? 'bg-indigo-400/20' : 'bg-blue-400/10'
+                  isAiSpeaking ? 'bg-emerald-400/20' : userVolume > 0.05 ? 'bg-teal-400/20' : 'bg-emerald-400/10'
                 }`}
               >
                 {/* Inner Core */}
                 <motion.div 
                   layoutId="ai-orb-core"
                   className={`w-24 h-24 rounded-full shadow-2xl transition-colors duration-500 ${
-                    isAiSpeaking ? 'bg-gradient-to-br from-teal-300 to-teal-500' : userVolume > 0.05 ? 'bg-gradient-to-br from-indigo-300 to-indigo-500' : 'bg-gradient-to-br from-blue-300/50 to-blue-500/50'
+                    isAiSpeaking ? 'bg-gradient-to-br from-emerald-300 to-emerald-500' : userVolume > 0.05 ? 'bg-gradient-to-br from-teal-300 to-teal-500' : 'bg-gradient-to-br from-emerald-300/50 to-emerald-500/50'
                   }`} 
                 />
               </motion.div>
@@ -643,29 +764,52 @@ WORKFLOW:
 
         {/* Floating Live Process Modal */}
         <AnimatePresence>
-          {isBookingAutomated && bookingArgs && (
+          {isBookingAutomated && appointmentDetails && (
             <motion.div
               initial={{ opacity: 0, scale: 0.9, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl z-30"
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-2xl bg-slate-900/80 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl z-50 max-h-[90vh] flex flex-col"
             >
-              <div className="flex items-center justify-between mb-4 px-2">
+              <div className="flex items-center justify-between mb-4 px-2 shrink-0">
                 <h3 className="text-white font-semibold flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
-                  Live Agent View
+                  {user?.language === 'bn' ? 'অ্যাপয়েন্টমেন্ট বুকিং' : 'Appointment Booking'}
                 </h3>
               </div>
               
-              <div className="w-full aspect-video rounded-xl overflow-hidden border border-white/10 bg-black">
-                <SimulatedBrowserStream 
-                  doctorName={bookingArgs.doctorName}
-                  hospital={bookingArgs.hospital}
-                  onComplete={() => {
-                    setTimeout(() => {
-                      setIsBookingAutomated(false);
-                      setBookingArgs(null);
-                    }, 2000);
+              <div className="w-full flex-1 min-h-0 rounded-xl overflow-hidden bg-white">
+                <AppointmentInfoWindow 
+                  details={appointmentDetails}
+                  language={user?.language || 'en'}
+                  onChange={setAppointmentDetails}
+                  onCancel={() => {
+                    setIsBookingAutomated(false);
+                    setAppointmentDetails(null);
+                    
+                    if (sessionRef.current) {
+                      sessionRef.current.sendClientContent({
+                        turns: [{ role: 'user', parts: [{ text: 'I have cancelled the appointment booking.' }] }],
+                        turnComplete: true
+                      });
+                    }
+                  }}
+                  onConfirm={() => {
+                    setToasts(prev => [...prev, {
+                      id: Date.now().toString(),
+                      type: 'recommendation',
+                      title: user?.language === 'bn' ? 'অ্যাপয়েন্টমেন্ট নিশ্চিত হয়েছে' : 'Appointment Confirmed',
+                      message: `Your appointment is confirmed.`
+                    }]);
+                    setIsBookingAutomated(false);
+                    setAppointmentDetails(null);
+                    
+                    if (sessionRef.current) {
+                      sessionRef.current.sendClientContent({
+                        turns: [{ role: 'user', parts: [{ text: 'I have confirmed the appointment.' }] }],
+                        turnComplete: true
+                      });
+                    }
                   }}
                 />
               </div>
@@ -882,8 +1026,26 @@ WORKFLOW:
             onClose={() => setShowHoverWindow(false)}
             onSelect={(doctor) => {
               setShowHoverWindow(false);
-              disconnect();
-              navigate('/booking', { state: { doctor } });
+              setAppointmentDetails({
+                doctorName: doctor.name,
+                hospital: doctor.hospital,
+                patientName: user?.name || '',
+                age: user?.profile?.age || '',
+                gender: user?.profile?.gender || '',
+                bloodType: user?.profile?.bloodType || '',
+                symptoms: '',
+                date: '',
+                time: ''
+              });
+              setIsBookingAutomated(true);
+              
+              // Tell the AI that the user selected a doctor
+              if (sessionRef.current) {
+                sessionRef.current.sendClientContent({
+                  turns: [{ role: 'user', parts: [{ text: `I selected ${doctor.name}. Please help me fill out the appointment details.` }] }],
+                  turnComplete: true
+                });
+              }
             }}
           />
         )}

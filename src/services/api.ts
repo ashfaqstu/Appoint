@@ -5,6 +5,14 @@ export interface User {
   name: string;
   email: string;
   language: 'en' | 'bn';
+  profile?: {
+    age?: string;
+    gender?: string;
+    bloodType?: string;
+    emergencyContact?: string;
+    allergies?: string;
+    chronicConditions?: string;
+  };
 }
 
 export interface Clinic {
@@ -163,6 +171,11 @@ export const api = {
       return new Promise((resolve) => setTimeout(() => resolve({ token: 'mock-jwt-token', user: { ...MOCK_USER, name, email, language } }), 1000));
     },
     me: async (): Promise<{ user: User }> => {
+      return new Promise((resolve) => setTimeout(() => resolve({ user: MOCK_USER }), 500));
+    },
+    updateProfile: async (profileData: any): Promise<{ user: User }> => {
+      // In a real app, this would send a PATCH request to the backend
+      MOCK_USER.profile = { ...MOCK_USER.profile, ...profileData };
       return new Promise((resolve) => setTimeout(() => resolve({ user: MOCK_USER }), 500));
     },
   },

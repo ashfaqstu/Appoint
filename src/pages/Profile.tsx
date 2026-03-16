@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
@@ -11,15 +11,41 @@ export default function Profile() {
   const { user, logout, setLanguage } = useAuth();
   const navigate = useNavigate();
   
-  const [age, setAge] = useState('32');
-  const [gender, setGender] = useState('Male');
-  const [bloodType, setBloodType] = useState('O+');
-  const [emergencyContact, setEmergencyContact] = useState('+1 (555) 123-4567');
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
+  const [age, setAge] = useState(user?.profile?.age || '32');
+  const [gender, setGender] = useState(user?.profile?.gender || 'Male');
+  const [bloodType, setBloodType] = useState(user?.profile?.bloodType || 'O+');
+  const [emergencyContact, setEmergencyContact] = useState(user?.profile?.emergencyContact || '+1 (555) 123-4567');
   const [activeSymptoms, setActiveSymptoms] = useState('None');
-  const [allergies, setAllergies] = useState('Penicillin');
-  const [chronicConditions, setChronicConditions] = useState('Asthma');
+  const [allergies, setAllergies] = useState(user?.profile?.allergies || 'Penicillin');
+  const [chronicConditions, setChronicConditions] = useState(user?.profile?.chronicConditions || 'Asthma');
   const [medications, setMedications] = useState('Albuterol Inhaler');
   const [radius, setRadius] = useState('10 km');
+  const [isSaving, setIsSaving] = useState(false);
+
+  const { updateProfile } = useAuth();
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await updateProfile({
+        age,
+        gender,
+        bloodType,
+        emergencyContact,
+        allergies,
+        chronicConditions
+      });
+      // Optionally show a success toast here
+    } catch (error) {
+      console.error('Failed to save profile', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const handleLogout = () => {
     logout();
@@ -167,8 +193,12 @@ export default function Profile() {
           </Card>
         </section>
 
-        <Button className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12 rounded-xl">
-          {user?.language === 'bn' ? 'সংরক্ষণ করুন' : 'Save Profile'}
+        <Button 
+          onClick={handleSave} 
+          disabled={isSaving}
+          className="w-full bg-teal-600 hover:bg-teal-700 text-white h-12 rounded-xl"
+        >
+          {isSaving ? 'Saving...' : (user?.language === 'bn' ? 'সংরক্ষণ করুন' : 'Save Profile')}
         </Button>
       </main>
     </motion.div>
